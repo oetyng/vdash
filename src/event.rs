@@ -40,6 +40,12 @@ impl Default for Config {
 	}
 }
 
+impl Default for Events {
+	fn default() -> Events {
+		Self::new()
+	}
+}
+
 impl Events {
 	pub fn new() -> Events {
 		Events::with_config(Config::default())

@@ -35,7 +35,7 @@ use std::{
 	error::Error,
 	io::{stdout, Write},
 	thread,
-	time::{Duration, Instant,SystemTime, UNIX_EPOCH},
+	time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 use chrono::Utc;
@@ -84,9 +84,11 @@ pub async fn main() -> Result<(), Box<dyn Error>> {
 		.expect("Time went backwards");
 	let mut next_update = start - Duration::from_secs(2);
 	loop {
-		if next_update < SystemTime::now()
-			.duration_since(UNIX_EPOCH)
-			.expect("Time went backwards") {
+		if next_update
+			< SystemTime::now()
+				.duration_since(UNIX_EPOCH)
+				.expect("Time went backwards")
+		{
 			terminal.draw(|f| draw_dashboard(f, &mut app))?;
 			next_update += Duration::from_secs(1);
 		}
@@ -96,88 +98,86 @@ pub async fn main() -> Result<(), Box<dyn Error>> {
 		pin_mut!(logfiles_future, events_future);
 
 		select! {
-			(e) = events_future => {
-			match e {
-				Some(Event::Input(event)) => {
-					match event.code {
-						// For debugging, ~ sends a line to the debug_window
-						KeyCode::Char('~') => app.dash_state._debug_window(format!("Event::Input({:#?})", event).as_str()),
+			e = events_future => {
+				match e {
+					Some(Event::Input(event)) => {
+						match event.code {
+							// For debugging, ~ sends a line to the debug_window
+							KeyCode::Char('~') => app.dash_state._debug_window(format!("Event::Input({:#?})", event).as_str()),
 
-						KeyCode::Char('q')|
-						KeyCode::Char('Q') => {
-							disable_raw_mode()?;
-							execute!(
-								terminal.backend_mut(),
-								LeaveAlternateScreen,
-								DisableMouseCapture
-							)?;
-							terminal.show_cursor()?;
-							break Ok(());
-						},
-						// KeyCode::Char('s')|
-						// KeyCode::Char('S') => app.set_main_view(DashViewMain::DashSummary),
-						KeyCode::Char('v')|
-						KeyCode::Char('V') => set_main_view(DashViewMain::DashNode, &mut app),
+							KeyCode::Char('q')|
+							KeyCode::Char('Q') => {
+								disable_raw_mode()?;
+								execute!(
+									terminal.backend_mut(),
+									LeaveAlternateScreen,
+									DisableMouseCapture
+								)?;
+								terminal.show_cursor()?;
+								break Ok(());
+							},
+							// KeyCode::Char('s')|
+							// KeyCode::Char('S') => app.set_main_view(DashViewMain::DashSummary),
+							KeyCode::Char('v')|
+							KeyCode::Char('V') => set_main_view(DashViewMain::DashNode, &mut app),
 
-						KeyCode::Char('+')|
-						KeyCode::Char('i')|
-						KeyCode::Char('I') => app.scale_timeline_up(),
-						KeyCode::Char('-')|
-						KeyCode::Char('o')|
-						KeyCode::Char('O') => app.scale_timeline_down(),
+							KeyCode::Char('+')|
+							KeyCode::Char('i')|
+							KeyCode::Char('I') => app.scale_timeline_up(),
+							KeyCode::Char('-')|
+							KeyCode::Char('o')|
+							KeyCode::Char('O') => app.scale_timeline_down(),
 
-						KeyCode::Down => app.handle_arrow_down(),
-						KeyCode::Up => app.handle_arrow_up(),
-						KeyCode::Right|
-						KeyCode::Tab => app.change_focus_next(),
-						KeyCode::Left => app.change_focus_previous(),
+							KeyCode::Down => app.handle_arrow_down(),
+							KeyCode::Up => app.handle_arrow_up(),
+							KeyCode::Right|
+							KeyCode::Tab => app.change_focus_next(),
+							KeyCode::Left => app.change_focus_previous(),
 
-						KeyCode::Char('g') => set_main_view(DashViewMain::DashDebug, &mut app),
-						_ => {}
-					};
-					terminal.draw(|f| draw_dashboard(f, &mut app));
-				}
-
-				Some(Event::Tick) => {
-					app.update_timelines(Some(Utc::now()));
-					app.update_chunk_store_stats();
-				// draw_dashboard(&mut f, &dash_state, &mut monitors).unwrap();
-				// draw_dashboard(f, &dash_state, &mut monitors)?;
-				}
-
-				None => {},
-			}
-			},
-
-			(line) = logfiles_future => {
-			match line {
-				Some(Ok(line)) => {
-					trace!("logfiles_future line");
-					let source_str = line.source().to_str().unwrap();
-					let source = String::from(source_str);
-					// app.dash_state._debug_window(format!("{}: {}", source, line.line()).as_str());
-
-					match app.get_monitor_for_file_path(&source) {
-						Some(monitor) => {
-							monitor.append_to_content(line.line())?;
-							if monitor.is_debug_dashboard_log {
-								app.dash_state._debug_window(line.line());
-							}
-						},
-						None => {
-							app.dash_state._debug_window(format!("NO MONITOR FOR: {}", source).as_str());
-						},
+							KeyCode::Char('g') => set_main_view(DashViewMain::DashDebug, &mut app),
+							_ => {}
+						};
+						let _res = terminal.draw(|f| draw_dashboard(f, &mut app));
 					}
-				},
-				Some(Err(e)) => {
-					app.dash_state._debug_window(format!("logfile error: {:#?}", e).as_str());
-					panic!("{}", e)
+
+					Some(Event::Tick) => {
+						app.update_timelines(Some(Utc::now()));
+						app.update_chunk_store_stats();
+					// draw_dashboard(&mut f, &dash_state, &mut monitors).unwrap();
+					// draw_dashboard(f, &dash_state, &mut monitors)?;
+					}
+
+					None => {},
 				}
-				None => {
-					app.dash_state._debug_window(format!("logfile error: None").as_str());
-					()
+			},
+			line = logfiles_future => {
+				match line {
+					Some(Ok(line)) => {
+						trace!("logfiles_future line");
+						let source_str = line.source().to_str().unwrap();
+						let source = String::from(source_str);
+						// app.dash_state._debug_window(format!("{}: {}", source, line.line()).as_str());
+
+						match app.get_monitor_for_file_path(&source) {
+							Some(monitor) => {
+								monitor.append_to_content(line.line())?;
+								if monitor.is_debug_dashboard_log {
+									app.dash_state._debug_window(line.line());
+								}
+							},
+							None => {
+								app.dash_state._debug_window(format!("NO MONITOR FOR: {}", source).as_str());
+							},
+						}
+					},
+					Some(Err(e)) => {
+						app.dash_state._debug_window(format!("logfile error: {:#?}", e).as_str());
+						panic!("{}", e)
+					}
+					None => {
+						app.dash_state._debug_window("logfile error: None".to_string().as_str());
+					}
 				}
-		}
 			},
 		}
 	}
@@ -193,16 +193,13 @@ fn initialise_events(tick_rate: u64) -> Rx {
 		loop {
 			// poll for tick rate duration, if no events, sent tick event.
 			if event::poll(tick_rate - last_tick.elapsed()).unwrap() {
-				if let CEvent::Key(key) = event::read().unwrap() {
-					tx.send(Event::Input(key));
+				if let Ok(CEvent::Key(key)) = event::read() {
+					match tx.send(Event::Input(key)) {
+						Ok(()) => (),
+						Err(e) => println!("send error: {}", e),
+					}
 				}
-			}
-			if last_tick.elapsed() >= tick_rate {
-				tx.send(Event::Tick);
-				last_tick = Instant::now();
-			}
-
-			if last_tick.elapsed() >= tick_rate {
+			} else if last_tick.elapsed() >= tick_rate {
 				match tx.send(Event::Tick) {
 					Ok(()) => last_tick = Instant::now(),
 					Err(e) => println!("send error: {}", e),

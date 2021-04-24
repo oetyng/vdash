@@ -6,7 +6,7 @@ use std::collections::HashMap;
 
 use chrono::{DateTime, Duration, Utc};
 use std::fs::{File, OpenOptions};
-use std::io::{Read, Error, ErrorKind, Write};
+use std::io::{Error, ErrorKind, Read, Write};
 use std::path::{Path, PathBuf};
 use structopt::StructOpt;
 use tempfile::NamedTempFile;
@@ -31,6 +31,10 @@ macro_rules! debug_log {
 	};
 }
 
+/// # Safety
+///
+/// TODO: Add this
+/// (Unsafe functions should document their safety preconditions, so that users can be sure they are using them safely.)
 pub unsafe fn debug_log(message: &str) {
 	// --debug-window - prints parser results for a single logfile
 	// to a temp logfile which is displayed in the adjacent window.
@@ -175,7 +179,7 @@ impl App {
 		}
 	}
 
-	pub fn get_monitor_for_file_path(&mut self, logfile: &String) -> Option<&mut LogMonitor> {
+	pub fn get_monitor_for_file_path(&mut self, logfile: &str) -> Option<&mut LogMonitor> {
 		let mut monitor_for_path = None;
 		for (monitor_file, monitor) in self.monitors.iter_mut() {
 			if monitor_file.eq(logfile) {
@@ -184,14 +188,14 @@ impl App {
 			}
 			use std::env::current_dir;
 			if let Ok(current_dir) = current_dir() {
-				let logfile_path = Path::new(logfile.as_str());
+				let logfile_path = Path::new(logfile);
 				if current_dir.join(monitor_file).eq(&logfile_path) {
 					monitor_for_path = Some(monitor);
 					break;
 				}
 			}
 		}
-		return monitor_for_path;
+		monitor_for_path
 	}
 
 	pub fn get_debug_dashboard_logfile(&mut self) -> Option<String> {
@@ -218,17 +222,14 @@ impl App {
 	}
 
 	pub fn set_logfile_with_focus(&mut self, logfile_name: String) {
-		match self.get_monitor_with_focus() {
-			Some(fading_monitor) => {
-				fading_monitor.has_focus = false;
-				self.logfile_with_focus = String::new();
-			}
-			None => (),
+		if let Some(fading_monitor) = self.get_monitor_with_focus() {
+			fading_monitor.has_focus = false;
+			self.logfile_with_focus = String::new();
 		}
 
 		if logfile_name == DEBUG_WINDOW_NAME {
 			self.dash_state.debug_window_has_focus = true;
-			self.logfile_with_focus = logfile_name.clone();
+			self.logfile_with_focus = logfile_name;
 			return;
 		} else {
 			self.dash_state.debug_window_has_focus = false;
@@ -330,7 +331,7 @@ impl App {
 	}
 
 	pub fn scale_timeline_down(&mut self) {
-		if self.dash_state.active_timeline == TIMELINES.len()-1 {
+		if self.dash_state.active_timeline == TIMELINES.len() - 1 {
 			return;
 		}
 		self.dash_state.active_timeline += 1;
@@ -347,14 +348,12 @@ fn do_bracketed_next_previous(list: &mut StatefulList<String>, next: bool) {
 		} else {
 			list.previous();
 		}
-	} else {
-		if let Some(selected) = list.state.selected() {
-			if selected != 0 {
-				list.previous();
-			}
-		} else {
+	} else if let Some(selected) = list.state.selected() {
+		if selected != 0 {
 			list.previous();
 		}
+	} else {
+		list.previous();
 	}
 }
 
@@ -363,7 +362,7 @@ fn exit_with_usage(reason: &str) -> Result<App, std::io::Error> {
 		"Try '{} --help' for more information.",
 		Opt::clap().get_name()
 	);
-	return Err(Error::new(ErrorKind::Other, reason));
+	Err(Error::new(ErrorKind::Other, reason))
 }
 
 pub struct ChunkStoreSpec {
@@ -397,13 +396,19 @@ lazy_static::lazy_static! {
 }
 
 pub struct ChunkStoreStat {
-	pub spec:	&'static ChunkStoreSpec,
+	pub spec: &'static ChunkStoreSpec,
 	pub space_used: u64,
 }
 
 pub struct ChunkStoreStatsAll {
 	pub chunk_store_stats: Vec<ChunkStoreStat>,
 	pub total_used: u64,
+}
+
+impl Default for ChunkStoreStatsAll {
+	fn default() -> Self {
+		Self::new()
+	}
 }
 
 impl ChunkStoreStatsAll {
@@ -417,7 +422,10 @@ impl ChunkStoreStatsAll {
 
 const USED_SPACE_FILENAME: &str = "used_space";
 
-pub fn update_chunk_store_stats(chunk_stores_path: &PathBuf, chunk_store_stats: &mut ChunkStoreStatsAll) {
+pub fn update_chunk_store_stats(
+	chunk_stores_path: &Path,
+	chunk_store_stats: &mut ChunkStoreStatsAll,
+) {
 	chunk_store_stats.chunk_store_stats = Vec::<ChunkStoreStat>::new();
 	chunk_store_stats.total_used = 0;
 
@@ -432,22 +440,22 @@ pub fn update_chunk_store_stats(chunk_stores_path: &PathBuf, chunk_store_stats: 
 		chunks_dir.push(spec.dir_name.clone());
 
 		let mut space_used: u64 = 0;
-		match OpenOptions::new()
+		if let Ok(mut record) = OpenOptions::new()
 			.read(true)
 			.write(false)
 			.create(false)
-			.open(chunks_dir.join(USED_SPACE_FILENAME)) {
-				Ok(mut record) => {
-					let mut buffer = vec![];
-					let _ = record.read_to_end(&mut buffer).unwrap();
-					if let Ok(size) = bincode::deserialize::<u64>(&buffer) {
-						chunk_store_stats.total_used += size;
-						space_used = size;
-					};
-					// debug_log!(format!("stat {} used {} bytes", &spec.dir_name, space_used).as_str());
-					chunk_store_stats.chunk_store_stats.push(ChunkStoreStat {spec, space_used});
-				},
-				Err(_) => {},
+			.open(chunks_dir.join(USED_SPACE_FILENAME))
+		{
+			let mut buffer = vec![];
+			let _ = record.read_to_end(&mut buffer).unwrap();
+			if let Ok(size) = bincode::deserialize::<u64>(&buffer) {
+				chunk_store_stats.total_used += size;
+				space_used = size;
+			};
+			// debug_log!(format!("stat {} used {} bytes", &spec.dir_name, space_used).as_str());
+			chunk_store_stats
+				.chunk_store_stats
+				.push(ChunkStoreStat { spec, space_used });
 		}
 	}
 }
@@ -529,7 +537,7 @@ impl LogMonitor {
 			}
 		}
 
-		if self.content.items.len() > 0 {
+		if !self.content.items.is_empty() {
 			self.content
 				.state
 				.select(Some(self.content.items.len() - 1));
@@ -669,14 +677,15 @@ impl TimelineSet {
 				let mut index = Some(bs.buckets.len() - 1);
 				// debug_log!(format!("time       : {}", time).as_str());
 				if let Some(bucket_time) = bs.bucket_time {
-				// debug_log!(format!("bucket_time: {}", bucket_time).as_str());
+					// debug_log!(format!("bucket_time: {}", bucket_time).as_str());
 					if time.lt(&bucket_time) {
 						// Use the closest bucket to this time
 						// debug_log!("increment (closest bucket)");
 						let time_difference = (bucket_time - time).num_nanoseconds();
 						let bucket_duration = bs.bucket_duration.num_nanoseconds();
 						if time_difference.and(bucket_duration).is_some() {
-							let buckets_behind = time_difference.unwrap() / bucket_duration.unwrap();
+							let buckets_behind =
+								time_difference.unwrap() / bucket_duration.unwrap();
 							if buckets_behind as usize > bs.buckets.len() {
 								// debug_log!(format!("increment DISCARDED buckets_behind: {}", buckets_behind).as_str());
 								index = None;
@@ -752,6 +761,8 @@ pub struct NodeMetrics {
 	pub activity_puts: u64,
 	pub activity_errors: u64,
 
+	// pub section_balance: u64,
+	// pub kb_store_cost: u64,
 	pub debug_logfile: Option<NamedTempFile>,
 	parser_output: String,
 }
@@ -872,7 +883,7 @@ impl NodeMetrics {
 	}
 
 	///! Returm a LogEntry and capture metadata for logfile node start:
-	///!	'Running safe-node v0.24.0'
+	///!    'Running safe-node v0.24.0'
 	pub fn parse_start(&mut self, line: &str) -> Option<LogEntry> {
 		let running_prefix = String::from("Running sn_node ");
 
@@ -903,30 +914,35 @@ impl NodeMetrics {
 	///! Process a logfile entry
 	///! Returns true if the line has been processed and can be discarded
 	pub fn process_logfile_entry(&mut self, entry: &LogEntry) -> bool {
-		return self.parse_data_response(
+		self.parse_data_response(
 			&entry,
 			"Running as Node: SendToSection [ msg: MsgEnvelope { message: QueryResponse { response: QueryResponse::",
-		) || self.parse_gets_and_puts(&entry) || self.parse_states(&entry);
+		) || self.parse_gets_and_puts(&entry) || self.parse_states(&entry)
 	}
 
 	///! TODO: Review and update these tests
 	///! TODO: see forum conversation https://safenetforum.org/t/vdash-safe-node-dashboard-safe-vault-run-baby-fleming-t/32630/38
+	#[allow(clippy::if_same_then_else)]
 	fn parse_gets_and_puts(&mut self, entry: &LogEntry) -> bool {
 		if entry.message.contains("Handling NodeDuty: ReadChunk") {
 			self.count_get(entry.time);
-			return true;
+			true
 		} else if entry.message.contains("Wrote data from message") {
 			self.count_put(entry.time);
-			return true;
-			// TODO: delete the following checks once the new test network is out
+			true
+		// TODO: delete the following checks once the new test network is out
 		} else if entry.message.contains("Writing chunk succeeded") {
 			self.count_put(entry.time);
-			return true;
-		} else if entry.message.starts_with("MapStorage: Writing chunk PASSED") {
+			true
+		} else if entry
+			.message
+			.starts_with("MapStorage: Writing chunk PASSED")
+		{
 			self.count_put(entry.time);
-			return true;
+			true
+		} else {
+			false
 		}
-		return false;
 	}
 
 	///! Update data metrics from a handler response logfile entry
@@ -936,7 +952,7 @@ impl NodeMetrics {
 			response_start += pattern.len();
 			let mut response = "";
 
-			if let Some(response_end) = entry.logstring[response_start..].find(",") {
+			if let Some(response_end) = entry.logstring[response_start..].find(',') {
 				response = entry.logstring.as_str()[response_start..response_start + response_end]
 					.as_ref();
 				if !response.is_empty() {
@@ -950,8 +966,8 @@ impl NodeMetrics {
 			};
 
 			return true;
-		};
-		return false;
+		}
+		false
 	}
 
 	///! Capture state updates from a logfile entry
@@ -978,9 +994,10 @@ impl NodeMetrics {
 		// Pre-Fleming testnets code with additions for Fleming T4.1
 		if let Some(agebracket) = self
 			.parse_word("Node promoted to ", &entry.logstring)
-			.or(self.parse_word("We are ", &entry.logstring))
-			.or(self.parse_word("New RoutingEvent received. Current role:", &entry.logstring))
-		{
+			.or_else(|| self.parse_word("We are ", &entry.logstring))
+			.or_else(|| {
+				self.parse_word("New RoutingEvent received. Current role:", &entry.logstring)
+			}) {
 			self.agebracket = match agebracket.as_str() {
 				"Infant" => NodeAgebracket::Infant,
 				"Adult" => NodeAgebracket::Adult,
@@ -1000,7 +1017,8 @@ impl NodeMetrics {
 				self.parser_output = format!("section prefix: {}", &section_prefix);
 				self.section_prefix = section_prefix;
 			} else {
-				self.parser_output = format!("FAILED to parse section prefix in: {}", &entry.logstring);
+				self.parser_output =
+					format!("FAILED to parse section prefix in: {}", &entry.logstring);
 			}
 
 			if let Some(node_age) = self.parse_usize("age:", &entry.logstring) {
@@ -1022,22 +1040,24 @@ impl NodeMetrics {
 
 		// TODO: probably needs deprecating as of T4.1 except perhaps for this agebracket check which needs review
 		// Fleming Testnet 3 based
-		if entry.logstring.contains("The network is not accepting nodes right now")
+		if entry
+			.logstring
+			.contains("The network is not accepting nodes right now")
 		{
 			self.agebracket = NodeAgebracket::Infant;
-			self.parser_output = format!("Age updated to: Infant");
+			self.parser_output = "Age updated to: Infant".to_string();
 			return true;
 		}
 
 		if entry.logstring.contains("Handling NodeDuty: WriteChunk") {
 			self.agebracket = NodeAgebracket::Adult;
-			self.parser_output = format!("Age updated to: Adult");
+			self.parser_output = "Age updated to: Adult".to_string();
 			return true;
 		}
 
 		if entry.logstring.contains("as an Elder") {
 			self.agebracket = NodeAgebracket::Elder;
-			self.parser_output = format!("Age updated to: Elder");
+			self.parser_output = "Age updated to: Elder".to_string();
 			return true;
 		}
 
@@ -1050,10 +1070,16 @@ impl NodeMetrics {
 				.trim()
 				.splitn(2, |c| c == ' ' || c == ',')
 				.collect();
-			if word.len() > 0 {
+			if !word.is_empty() {
 				match word[0].parse::<usize>() {
 					Ok(value) => return Some(value),
-					Err(_e) => self.parser_output = format!("failed to parse '{}' as usize from: '{}'", word[0], &content[position + prefix.len()..]),
+					Err(_e) => {
+						self.parser_output = format!(
+							"failed to parse '{}' as usize from: '{}'",
+							word[0],
+							&content[position + prefix.len()..]
+						)
+					}
 				}
 			}
 		}
@@ -1066,7 +1092,7 @@ impl NodeMetrics {
 				.trim_start()
 				.splitn(2, |c| c == ' ' || c == ',')
 				.collect();
-			if word.len() > 0 {
+			if !word.is_empty() {
 				return Some(word[0].to_string());
 			} else {
 				self.parser_output = format!("failed to parse word at: '{}'", &content[start..]);
@@ -1143,8 +1169,8 @@ pub struct LogEntry {
 
 impl LogEntry {
 	///! Decode node logfile lines of the form:
-	///! 	[sn_node] INFO 2020-12-18T14:33:49.799447454+00:00 [src/node/mod.rs:97] Our Age: 5
-	///!	[sn_node] ERROR 2020-12-18T16:33:54.237345352+00:00 [src/utils.rs:52] Failed to load auto dump db at /home/mrh/.safe/node/baby-fleming-nodes/sn-node-genesis/transfers/f67c2e75cbce0a6097187cdf95be1c0963ad34105d643cbb00aa1f0e8b113761.db: No such file or directory (os error 2)
+	///!    [sn_node] INFO 2020-12-18T14:33:49.799447454+00:00 [src/node/mod.rs:97] Our Age: 5
+	///!    [sn_node] ERROR 2020-12-18T16:33:54.237345352+00:00 [src/utils.rs:52] Failed to load auto dump db at /home/mrh/.safe/node/baby-fleming-nodes/sn-node-genesis/transfers/f67c2e75cbce0a6097187cdf95be1c0963ad34105d643cbb00aa1f0e8b113761.db: No such file or directory (os error 2)
 	///!
 	pub fn decode(line: &str) -> Option<LogEntry> {
 		let mut _test_entry = LogEntry {
@@ -1164,8 +1190,8 @@ impl LogEntry {
 	}
 
 	///! Parse a line of the form:
-	///! 	[sn_node] INFO 2020-12-18T14:33:49.799447454+00:00 [src/node/mod.rs:97] Our Age: 5
-	///!	[sn_node] ERROR 2020-12-18T16:33:54.237345352+00:00 [src/utils.rs:52] Failed to load auto dump db at /home/mrh/.safe/node/baby-fleming-nodes/sn-node-genesis/transfers/f67c2e75cbce0a6097187cdf95be1c0963ad34105d643cbb00aa1f0e8b113761.db: No such file or directory (os error 2)
+	///!    [sn_node] INFO 2020-12-18T14:33:49.799447454+00:00 [src/node/mod.rs:97] Our Age: 5
+	///!    [sn_node] ERROR 2020-12-18T16:33:54.237345352+00:00 [src/utils.rs:52] Failed to load auto dump db at /home/mrh/.safe/node/baby-fleming-nodes/sn-node-genesis/transfers/f67c2e75cbce0a6097187cdf95be1c0963ad34105d643cbb00aa1f0e8b113761.db: No such file or directory (os error 2)
 	fn parse_logfile_line(line: &str) -> Option<LogEntry> {
 		if let Some(captures) = LOG_LINE_PATTERN.captures(line) {
 			let module = captures.name("module").map_or("", |m| m.as_str());
@@ -1237,9 +1263,14 @@ pub struct DashState {
 	max_debug_window: usize,
 }
 
+impl Default for DashState {
+	fn default() -> Self {
+		Self::new()
+	}
+}
+
 impl DashState {
 	pub fn new() -> DashState {
-
 		DashState {
 			main_view: DashViewMain::DashNode,
 			active_timeline: 0,
@@ -1269,6 +1300,12 @@ impl DashState {
 
 pub struct DashVertical {
 	_active_view: usize,
+}
+
+impl Default for DashVertical {
+	fn default() -> Self {
+		Self::new()
+	}
 }
 
 impl DashVertical {

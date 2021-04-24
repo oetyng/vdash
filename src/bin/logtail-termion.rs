@@ -29,14 +29,9 @@ pub mod shared;
 use shared::event::{Event, Events};
 
 use termion::{event::Key, input::MouseTerminal, raw::IntoRawMode, screen::AlternateScreen};
-use tui::{
-	backend::TermionBackend,
-	Terminal,
-};
+use tui::{backend::TermionBackend, Terminal};
 
-use std::{
-	time::{Duration, SystemTime, UNIX_EPOCH},
-};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use chrono::Utc;
 
@@ -87,9 +82,11 @@ async fn terminal_main() -> std::io::Result<()> {
 		.expect("Time went backwards");
 	let mut next_update = start - Duration::from_secs(2);
 	loop {
-		if next_update < SystemTime::now()
-			.duration_since(UNIX_EPOCH)
-			.expect("Time went backwards") {
+		if next_update
+			< SystemTime::now()
+				.duration_since(UNIX_EPOCH)
+				.expect("Time went backwards")
+		{
 			terminal.draw(|f| draw_dashboard(f, &mut app))?;
 			next_update += Duration::from_secs(1);
 		}
@@ -99,7 +96,7 @@ async fn terminal_main() -> std::io::Result<()> {
 		pin_mut!(events_future, logfiles_future);
 
 		select! {
-			(e) = events_future => {
+			e = events_future => {
 				match e {
 					Some(Event::Input(input)) => {
 						match input {
@@ -119,7 +116,7 @@ async fn terminal_main() -> std::io::Result<()> {
 							Key::Char('-')|
 							Key::Char('o')|
 							Key::Char('O') => app.scale_timeline_down(),
-	
+
 							Key::Down => app.handle_arrow_down(),
 							Key::Up => app.handle_arrow_up(),
 							Key::Right|
@@ -155,7 +152,7 @@ async fn terminal_main() -> std::io::Result<()> {
 					None => (),
 				}
 			},
-			(line) = logfiles_future => {
+			line = logfiles_future => {
 				trace!("logfiles_future line");
 				match line {
 					Some(Ok(line)) => {
@@ -163,15 +160,12 @@ async fn terminal_main() -> std::io::Result<()> {
 						let source = String::from(source_str);
 						// app.dash_state._debug_window(format!("{}: {}", source, line.line()).as_str());
 
-						match app.get_monitor_for_file_path(&source) {
-							Some(monitor) => {
-								trace!("APPENDING: {}", line.line());
-								monitor.append_to_content(line.line())?;
-								if monitor.is_debug_dashboard_log {
-									app.dash_state._debug_window(line.line());
-								}
-							},
-							None => (),
+						if let Some(monitor) = app.get_monitor_for_file_path(&source) {
+							trace!("APPENDING: {}", line.line());
+							monitor.append_to_content(line.line())?;
+							if monitor.is_debug_dashboard_log {
+								app.dash_state._debug_window(line.line());
+							}
 						}
 					},
 					Some(Err(e)) => {
@@ -180,8 +174,7 @@ async fn terminal_main() -> std::io::Result<()> {
 						return Err(e)
 					},
 					None => {
-						app.dash_state._debug_window(format!("logfile error: None").as_str());
-						()
+						app.dash_state._debug_window("logfile error: None".to_string().as_str());
 					}
 				}
 			},

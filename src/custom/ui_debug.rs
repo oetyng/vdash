@@ -3,10 +3,7 @@
 use super::app::{DashState, DashViewMain, LogMonitor};
 use std::collections::HashMap;
 
-use tui::{
-	backend::Backend,
-	Frame
-};
+use tui::{backend::Backend, Frame};
 
 pub fn draw_dashboard<B: Backend>(
 	f: &mut Frame<B>,

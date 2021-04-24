@@ -1,21 +1,21 @@
-/// Terminal based interface and dashboard
-///
-/// Edit src/custom/ui.rs to create a customised fork of logtail-dash
+// Terminal based interface and dashboard
+//
+// Edit src/custom/ui.rs to create a customised fork of logtail-dash
 
-use super::app::{TIMELINES, App, DashState, DashViewMain, LogMonitor, DEBUG_WINDOW_NAME};
+use super::app::{App, DashState, DashViewMain, LogMonitor, DEBUG_WINDOW_NAME, TIMELINES};
 use super::ui_debug::draw_dashboard as debug_draw_dashboard;
 
 #[path = "../widgets/mod.rs"]
 pub mod widgets;
-use self::widgets::sparkline::Sparkline2;
 use self::widgets::gauge::Gauge2;
+use self::widgets::sparkline::Sparkline2;
 use std::collections::HashMap;
 
 use tui::{
 	backend::Backend,
 	layout::{Constraint, Direction, Layout, Rect},
 	style::{Color, Modifier, Style},
-	text::{Spans},
+	text::Spans,
 	widgets::{Block, Borders, List, ListItem},
 	Frame,
 };
@@ -24,7 +24,7 @@ pub fn draw_dashboard<B: Backend>(f: &mut Frame<B>, app: &mut App) {
 	match app.dash_state.main_view {
 		DashViewMain::DashSummary => {} //draw_summary_dash(f, dash_state, monitors),
 		DashViewMain::DashNode => draw_node_dash(f, &mut app.dash_state, &mut app.monitors),
-		DashViewMain::DashDebug => debug_draw_dashboard(f, &mut app.dash_state, &mut app.monitors),
+		DashViewMain::DashDebug => debug_draw_dashboard(f, &app.dash_state, &mut app.monitors),
 	}
 }
 
@@ -46,7 +46,7 @@ fn draw_node_dash<B: Backend>(
 		.constraints(constraints.as_ref())
 		.split(size);
 
-	for entry in monitors.into_iter() {
+	for entry in monitors.iter_mut() {
 		let (logfile, mut monitor) = entry;
 		if monitor.has_focus {
 			// Stats and Graphs / Timeline / Logfile
@@ -60,7 +60,12 @@ fn draw_node_dash<B: Backend>(
 	draw_debug_window(f, size, dash_state);
 }
 
-fn draw_node<B: Backend>(f: &mut Frame<B>, area: Rect, dash_state: &mut DashState, monitor: &mut LogMonitor) {
+fn draw_node<B: Backend>(
+	f: &mut Frame<B>,
+	area: Rect,
+	dash_state: &mut DashState,
+	monitor: &mut LogMonitor,
+) {
 	// Columns:
 	let constraints = [
 		Constraint::Length(40), // Stats summary
@@ -88,13 +93,9 @@ fn draw_node_stats<B: Backend>(f: &mut Frame<B>, area: Rect, monitor: &mut LogMo
 	push_metric(
 		&mut items,
 		&"Age".to_string(),
-		&monitor.metrics.node_age.to_string()
+		&monitor.metrics.node_age.to_string(),
 	);
-	push_metric(
-		&mut items,
-		&"Name".to_string(),
-		&monitor.metrics.node_name,
-	);
+	push_metric(&mut items, &"Name".to_string(), &monitor.metrics.node_name);
 	push_metric(
 		&mut items,
 		&"Section".to_string(),
@@ -135,48 +136,46 @@ fn draw_node_stats<B: Backend>(f: &mut Frame<B>, area: Rect, monitor: &mut LogMo
 	// );
 
 	let heading = format!("Node {:>2} Status", monitor.index + 1);
-	let monitor_widget = List::new(items).block(
-		Block::default()
-			.borders(Borders::ALL)
-			.title(heading.to_string()),
-	);
+	let monitor_widget =
+		List::new(items).block(Block::default().borders(Borders::ALL).title(heading));
 	f.render_stateful_widget(monitor_widget, area, &mut monitor.metrics_status.state);
 }
 
-fn push_subheading(items: &mut Vec<ListItem>, subheading: &String) {
+fn push_subheading(items: &mut Vec<ListItem>, subheading: &str) {
 	items.push(
-		ListItem::new(vec![Spans::from(subheading.clone())])
+		ListItem::new(vec![Spans::from(subheading.to_string())])
 			.style(Style::default().fg(Color::Yellow)),
 	);
 }
 
-fn push_metric(items: &mut Vec<ListItem>, metric: &String, value: &String) {
+fn push_metric(items: &mut Vec<ListItem>, metric: &str, value: &str) {
 	let s = format!("{:<12}: {:>12}", metric, value);
-	items.push(
-		ListItem::new(vec![Spans::from(s.clone())])
-			.style(Style::default().fg(Color::Blue)),
-	);
+	items.push(ListItem::new(vec![Spans::from(s)]).style(Style::default().fg(Color::Blue)));
 }
 
-fn draw_node_storage<B: Backend>(f: &mut Frame<B>, area: Rect, _dash_state: &mut DashState, monitor: &mut LogMonitor) {
+fn draw_node_storage<B: Backend>(
+	f: &mut Frame<B>,
+	area: Rect,
+	_dash_state: &mut DashState,
+	monitor: &mut LogMonitor,
+) {
 	let total_string = format_size(monitor.chunk_store.total_used, 1);
 	let limit_string = match &monitor.chunk_store_fsstats {
 		Some(fsstats) => {
 			let chunk_store_limit = fsstats.free_space();
-			format_size(chunk_store_limit, 1).to_string()
-		},
-		None => {
-			"unknown".to_string()
+			format_size(chunk_store_limit, 1)
 		}
+		None => "unknown".to_string(),
 	};
 
-	let heading = format!("Node {:>2} Chunk Store:  {:>9} of {} limit", monitor.index+1, &total_string, &limit_string);
+	let heading = format!(
+		"Node {:>2} Chunk Store:  {:>9} of {} limit",
+		monitor.index + 1,
+		&total_string,
+		&limit_string
+	);
 	let monitor_widget = List::new(Vec::<ListItem>::new())
-		.block(
-			Block::default()
-				.borders(Borders::ALL)
-				.title(heading.clone()),
-		)
+		.block(Block::default().borders(Borders::ALL).title(heading))
 		.highlight_style(
 			Style::default()
 				.bg(Color::LightGreen)
@@ -184,81 +183,62 @@ fn draw_node_storage<B: Backend>(f: &mut Frame<B>, area: Rect, _dash_state: &mut
 		);
 	f.render_stateful_widget(monitor_widget, area, &mut monitor.content.state);
 
-	if monitor.chunk_store.chunk_store_stats.len() < 1 {
+	if monitor.chunk_store.chunk_store_stats.is_empty() {
 		return;
 	}
 
 	let columns = Layout::default()
 		.direction(Direction::Horizontal)
 		.margin(1)
-		.constraints(
-			[
-				Constraint::Length(27),
-				Constraint::Min(12),
-			]
-			.as_ref(),
-		)
+		.constraints([Constraint::Length(27), Constraint::Min(12)].as_ref())
 		.split(area);
 
-		let mut label_items = Vec::<ListItem>::new();
-		push_storage_subheading(&mut label_items, &"Chunks".to_string());
-		let mut gauges_column = columns[1];
-		gauges_column.height = 1;
+	let mut label_items = Vec::<ListItem>::new();
+	push_storage_subheading(&mut label_items, &"Chunks".to_string());
+	let mut gauges_column = columns[1];
+	gauges_column.height = 1;
 
-		// One gauge gap for heading, and an extra gauge so the last one drawn doesn't expand to the bottom
-		let constraints = vec![Constraint::Length(1); monitor.chunk_store.chunk_store_stats.len() + 2];
-		let gauges = Layout::default()
-			.direction(Direction::Vertical)
-			.constraints(constraints.as_ref())
-			.split(columns[1]);
+	// One gauge gap for heading, and an extra gauge so the last one drawn doesn't expand to the bottom
+	let constraints = vec![Constraint::Length(1); monitor.chunk_store.chunk_store_stats.len() + 2];
+	let gauges = Layout::default()
+		.direction(Direction::Vertical)
+		.constraints(constraints.as_ref())
+		.split(columns[1]);
 
-		// Metrics with label + gauge
-		let mut next_gauge: usize = 1;	// Start after the heading
-		for stat in monitor.chunk_store.chunk_store_stats.iter() {
-			// For labels column
-			push_storage_metric(
-				&mut label_items,
-				&stat.spec.ui_name,
-				&format_size(stat.space_used, 1)
-			);
-
-			// Gauge2s column
-			let gauge = Gauge2::default()
-				.block(Block::default())
-				.gauge_style(Style::default().fg(Color::Yellow))
-				.ratio(ratio(stat.space_used, monitor.chunk_store.total_used));
-			f.render_widget(gauge, gauges[next_gauge]);
-			next_gauge += 1;
-		}
-
-		push_storage_subheading(&mut label_items, &"".to_string());
-		push_storage_subheading(&mut label_items, &"Device".to_string());
-
+	// Metrics with label + gauge
+	let mut next_gauge: usize = 1; // Start after the heading
+	for stat in monitor.chunk_store.chunk_store_stats.iter() {
+		// For labels column
 		push_storage_metric(
 			&mut label_items,
-			&"Total Chunks".to_string(),
-			&total_string
+			&stat.spec.ui_name,
+			&format_size(stat.space_used, 1),
 		);
 
-		push_storage_metric(
-			&mut label_items,
-			&"Space Free".to_string(),
-			&limit_string
-		);
-
-
-		// Render labels
-		let labels_widget = List::new(label_items).block(
-			Block::default()
-				.borders(Borders::NONE)
-		);
-		f.render_widget(labels_widget, columns[0]);
-
+		// Gauge2s column
+		let gauge = Gauge2::default()
+			.block(Block::default())
+			.gauge_style(Style::default().fg(Color::Yellow))
+			.ratio(ratio(stat.space_used, monitor.chunk_store.total_used));
+		f.render_widget(gauge, gauges[next_gauge]);
+		next_gauge += 1;
 	}
+
+	push_storage_subheading(&mut label_items, &"".to_string());
+	push_storage_subheading(&mut label_items, &"Device".to_string());
+
+	push_storage_metric(&mut label_items, &"Total Chunks".to_string(), &total_string);
+
+	push_storage_metric(&mut label_items, &"Space Free".to_string(), &limit_string);
+
+	// Render labels
+	let labels_widget = List::new(label_items).block(Block::default().borders(Borders::NONE));
+	f.render_widget(labels_widget, columns[0]);
+}
 
 // Return string representation in TB, MB, KB or bytes depending on magnitude
 fn format_size(bytes: u64, fractional_digits: usize) -> String {
-	use::byte_unit::Byte;
+	use ::byte_unit::Byte;
 	let bytes = Byte::from_bytes(bytes as u128);
 	bytes.get_appropriate_unit(false).format(fractional_digits)
 }
@@ -266,7 +246,7 @@ fn format_size(bytes: u64, fractional_digits: usize) -> String {
 // Return ratio from two u64
 fn ratio(numerator: u64, denomimator: u64) -> f64 {
 	let percent = numerator as f64 / denomimator as f64;
-	if  percent.is_nan() || percent < 0.0 {
+	if percent.is_nan() || percent < 0.0 {
 		0.0
 	} else if percent > 1.0 {
 		1.0
@@ -275,19 +255,16 @@ fn ratio(numerator: u64, denomimator: u64) -> f64 {
 	}
 }
 
-fn push_storage_subheading(items: &mut Vec<ListItem>, subheading: &String) {
+fn push_storage_subheading(items: &mut Vec<ListItem>, subheading: &str) {
 	items.push(
-		ListItem::new(vec![Spans::from(subheading.clone())])
+		ListItem::new(vec![Spans::from(subheading.to_string())])
 			.style(Style::default().fg(Color::Yellow)),
 	);
 }
 
-fn push_storage_metric(items: &mut Vec<ListItem>, metric: &String, value: &String) {
+fn push_storage_metric(items: &mut Vec<ListItem>, metric: &str, value: &str) {
 	let s = format!("{:<13}:{:>9}", metric, value);
-	items.push(
-		ListItem::new(vec![Spans::from(s.clone())])
-			.style(Style::default().fg(Color::Blue)),
-	);
+	items.push(ListItem::new(vec![Spans::from(s)]).style(Style::default().fg(Color::Blue)));
 }
 
 fn draw_timeline<B: Backend>(
@@ -306,7 +283,7 @@ fn draw_timeline<B: Backend>(
 
 	let window_widget = Block::default()
 		.borders(Borders::ALL)
-		.title(format!("Timeline - {}", active_timeline_name).to_string());
+		.title(format!("Timeline - {}", active_timeline_name));
 	f.render_widget(window_widget, area);
 
 	// For debugging the bucket state
@@ -375,23 +352,19 @@ fn draw_timeline<B: Backend>(
 fn draw_sparkline<B: Backend>(
 	f: &mut Frame<B>,
 	area: Rect,
-	buckets: &Vec<u64>,
+	buckets: &[u64],
 	title: &str,
 	fg_colour: tui::style::Color,
-	) {
-
-		let sparkline = Sparkline2::default()
+) {
+	let sparkline = Sparkline2::default()
 		.block(Block::default().title(title))
-		.data(buckets_right_justify(
-			&buckets,
-			area.width,
-		))
+		.data(buckets_right_justify(&buckets, area.width))
 		.style(Style::default().fg(fg_colour));
 	f.render_widget(sparkline, area);
 }
 
 // Right justify and truncate (left) a set of buckets to width
-fn buckets_right_justify(buckets: &Vec<u64>, width: u16) -> &[u64] {
+fn buckets_right_justify(buckets: &[u64], width: u16) -> &[u64] {
 	let width = width as usize;
 	if width < buckets.len() {
 		return &buckets[buckets.len() - width..];
@@ -404,7 +377,7 @@ fn draw_bottom_panel<B: Backend>(
 	f: &mut Frame<B>,
 	area: Rect,
 	dash_state: &mut DashState,
-	logfile: &String,
+	logfile: &str,
 	monitor: &mut LogMonitor,
 ) {
 	if dash_state.debug_window {
@@ -429,7 +402,7 @@ fn draw_bottom_panel<B: Backend>(
 pub fn draw_logfile<B: Backend>(
 	f: &mut Frame<B>,
 	area: Rect,
-	logfile: &String,
+	logfile: &str,
 	monitor: &mut LogMonitor,
 ) {
 	let highlight_style = match monitor.has_focus {
@@ -452,11 +425,7 @@ pub fn draw_logfile<B: Backend>(
 	let node_log_title = format!("Node Log ({})", logfile);
 
 	let logfile_widget = List::new(items)
-		.block(
-			Block::default()
-				.borders(Borders::ALL)
-				.title(node_log_title.clone()),
-		)
+		.block(Block::default().borders(Borders::ALL).title(node_log_title))
 		.highlight_style(highlight_style);
 
 	f.render_stateful_widget(logfile_widget, area, &mut monitor.content.state);
